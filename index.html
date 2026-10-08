@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI-дизайн ванной · Основит</title>
+  <meta name="description" content="Укажите параметры ванной: сервис нарисует дизайн и покажет, какие материалы Основит понадобятся и где.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-in">
+      <a class="logo" href="https://osnovit.ru/" target="_blank" rel="noopener">ОСНОВИТ</a>
+      <span class="badge">прототип</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1>AI-дизайн ванной комнаты</h1>
+    <p class="lead">Укажите параметры помещения и отделки: сервис нарисует визуализацию и отметит синими точками, где какой материал Основит используется. Нажмите на точку, чтобы приблизить.</p>
+
+    <div class="layout">
+      <form id="form" class="panel form" novalidate>
+        <details open>
+          <summary>Помещение</summary>
+          <div class="grid3">
+            <label>Длина, мм<input type="number" name="length" value="2400" min="1000" max="8000" step="10" required></label>
+            <label>Ширина, мм<input type="number" name="width" value="1800" min="1000" max="8000" step="10" required></label>
+            <label>Высота, мм<input type="number" name="height" value="2700" min="2000" max="4000" step="10" required></label>
+          </div>
+        </details>
+
+        <details open>
+          <summary>Отделка стен</summary>
+          <div class="grid2">
+            <label>Размер плитки<select name="wallTile" data-options="tiles" data-default="600x1200"></select></label>
+            <label>Цвет<select name="wallColor" data-options="colors" data-default="RAL7032"></select></label>
+            <label>Фактура<select name="wallTexture" data-options="textures" data-default="matte"></select></label>
+            <label>Укладка<select name="wallLaying">
+              <option value="vertical">Вертикальная</option>
+              <option value="horizontal">Горизонтальная</option>
+            </select></label>
+          </div>
+        </details>
+
+        <details open>
+          <summary>Отделка пола</summary>
+          <div class="grid2">
+            <label>Размер плитки<select name="floorTile" data-options="tiles" data-default="600x600"></select></label>
+            <label>Цвет<select name="floorColor" data-options="colors" data-default="RAL7030"></select></label>
+            <label>Фактура<select name="floorTexture" data-options="textures" data-default="matte"></select></label>
+            <label>Укладка<select name="floorLaying">
+              <option value="straight">Прямая</option>
+              <option value="diagonal">Диагональная</option>
+              <option value="herringbone">Ёлочка</option>
+            </select></label>
+          </div>
+        </details>
+
+        <details>
+          <summary>Сантехника и мебель</summary>
+          <div class="chips" role="radiogroup" aria-label="Мокрая зона">
+            <label class="chip"><input type="radio" name="wet" value="shower" checked><span>Душевая</span></label>
+            <label class="chip"><input type="radio" name="wet" value="bath"><span>Ванна</span></label>
+          </div>
+          <div class="checks">
+            <label><input type="checkbox" name="extras" value="toilet" checked> Унитаз</label>
+            <label><input type="checkbox" name="extras" value="towel" checked> Полотенцесушитель</label>
+            <label><input type="checkbox" name="extras" value="washer"> Стиральная машина</label>
+            <label><input type="checkbox" name="extras" value="niche"> Ниша с подсветкой</label>
+            <label><input type="checkbox" name="extras" value="plants"> Растения</label>
+          </div>
+        </details>
+
+        <details>
+          <summary>Стиль и свет</summary>
+          <div class="grid2">
+            <label>Стиль<select name="style" data-options="styles" data-default="japandi"></select></label>
+            <label>Свет<select name="light">
+              <option value="warm">Тёплый, 3000 K</option>
+              <option value="neutral" selected>Нейтральный, 4000 K</option>
+              <option value="cold">Холодный, 5000 K</option>
+            </select></label>
+          </div>
+        </details>
+
+        <details>
+          <summary>Пожелания</summary>
+          <label>Что ещё учесть (по-русски или по-английски)<textarea name="notes" rows="3" maxlength="300" placeholder="Например: деревянная столешница, чёрные смесители"></textarea></label>
+        </details>
+
+        <p class="err" id="formErr" hidden></p>
+        <button class="btn" type="submit" id="go">Создать дизайн</button>
+      </form>
+
+      <section class="result" aria-live="polite">
+        <div class="viewer panel" id="viewer" data-state="empty">
+          <div class="placeholder">
+            <strong>Заполните форму и нажмите «Создать дизайн»</strong>
+            <span>Здесь появится визуализация с точками-материалами</span>
+          </div>
+          <div class="loading">
+            <div class="spinner"></div>
+            <strong>Рисуем вашу ванную…</strong>
+            <span id="loadTimer">обычно 10–40 секунд</span>
+          </div>
+          <div class="failed">
+            <strong>Не получилось сгенерировать изображение</strong>
+            <span>Сервис генерации перегружен или недоступен.</span>
+            <button class="btn small" type="button" id="retry">Попробовать ещё раз</button>
+          </div>
+
+          <div class="stage" id="stage">
+            <img id="img" alt="Сгенерированный дизайн ванной комнаты">
+            <div class="spots" id="spots"></div>
+          </div>
+
+          <aside class="drawer" id="drawer" aria-hidden="true">
+            <button class="close" type="button" id="close" aria-label="Закрыть">×</button>
+            <div class="zone" id="dZone"></div>
+            <a class="dmain" id="dLink" target="_blank" rel="noopener">
+              <img id="dImg" alt="">
+              <div>
+                <div class="dkind" id="dKind"></div>
+                <div class="dname" id="dName"></div>
+              </div>
+            </a>
+            <p class="ddesc" id="dDesc"></p>
+            <div class="also" id="dAlso"></div>
+          </aside>
+        </div>
+        <p class="hint" id="hint" hidden>Нажмите на синюю точку, чтобы приблизить. Если точка промахнулась, перетащите её на нужное место.</p>
+      </section>
+    </div>
+
+    <section class="need" id="need" hidden>
+      <h2>Для реализации этого дизайна понадобится</h2>
+      <div class="cards" id="cards"></div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    Прототип. Изображения генерирует бесплатный сервис Pollinations.ai; фото и названия продуктов взяты с osnovit.ru.
+  </footer>
+
+  <script src="products.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
