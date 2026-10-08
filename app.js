@@ -111,7 +111,7 @@ function pickMaterials(d) {
 
   const zones = [
     {
-      id: "walls", title: "Стены", x: .55, y: .36,
+      id: "walls", title: "Стены", x: .62, y: .25,
       main: shiny(d.wallTexture) ? "ac17w" : wallBig ? "ac16" : "ac12h",
       also: ["pc211", "lp51a"],
     },
@@ -168,23 +168,23 @@ function generate(d) {
   clearInterval(timer);
   timer = setInterval(() => {
     const s = Math.round((Date.now() - started) / 1000);
-    $("#loadTimer").textContent = `прошло ${s} с · обычно 10–40 секунд`;
+    $("#loadTimer").textContent = `прошло ${s} с · обычно 5–20 секунд`;
   }, 1000);
 
+  const prompt = buildPrompt(d);
   const seed = Math.floor(Math.random() * 1e9);
-  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(buildPrompt(d)) +
-    `?width=1024&height=768&seed=${seed}&nologo=true&model=flux`;
+  const fail = setTimeout(() => done(null), 120000);
+  generateFlux(prompt, seed)
+    .catch(() => generatePollinations(prompt, seed))
+    .then(url => done(url), () => done(null));
 
-  const pre = new Image();
-  const fail = setTimeout(() => done(false), 120000);
-  pre.onload = () => done(true);
-  pre.onerror = () => done(false);
-  pre.src = url;
-
-  function done(ok) {
+  let finished = false;
+  function done(url) {
+    if (finished) return;
+    finished = true;
+    const ok = !!url;
     clearTimeout(fail);
     clearInterval(timer);
-    pre.onload = pre.onerror = null;
     goBtn.disabled = false;
     goBtn.textContent = "Создать дизайн";
     if (lastParams !== d) return;
@@ -204,6 +204,44 @@ function generate(d) {
     viewer.dataset.state = "ready";
     $("#hint").hidden = false;
   }
+}
+
+// Основной генератор: открытая модель FLUX.1-schnell в публичном Hugging Face Space.
+// Бесплатно, без ключа; у каждого посетителя свой суточный лимит GPU.
+const FLUX_SPACE = "https://black-forest-labs-flux-1-schnell.hf.space";
+
+async function generateFlux(prompt, seed) {
+  const start = await fetch(FLUX_SPACE + "/gradio_api/call/infer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // prompt, seed, randomize_seed, width, height, steps
+    body: JSON.stringify({ data: [prompt, seed, false, 1024, 768, 4] }),
+  });
+  if (!start.ok) throw new Error("flux " + start.status);
+  const { event_id } = await start.json();
+  const stream = await (await fetch(`${FLUX_SPACE}/gradio_api/call/infer/${event_id}`)).text();
+  const m = stream.match(/event: complete\ndata: (.*)/);
+  if (!m) throw new Error("flux failed");
+  const url = JSON.parse(m[1])[0].url;
+  await preload(url);
+  return url;
+}
+
+// Запасной генератор: Pollinations (лимит меньше, качество ниже).
+async function generatePollinations(prompt, seed) {
+  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
+    `?width=1024&height=768&seed=${seed}&nologo=true&model=flux`;
+  await preload(url);
+  return url;
+}
+
+function preload(url) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = resolve;
+    im.onerror = reject;
+    im.src = url;
+  });
 }
 
 // Координаты зон на demo.jpg (тумба слева, ванна справа).
@@ -283,7 +321,7 @@ function openZoom(b) {
   for (const s of spots.children) s.classList.toggle("active", s === b);
   viewer.classList.add("zoomed");
   fillDrawer(z);
-  $("#drawer").setAttribute("aria-hidden", "false");
+  $("#drawer").inert = false;
   setTimeout(() => $("#close").focus({ preventScroll: true }), 500);
 }
 
@@ -292,7 +330,7 @@ function closeZoom(instant) {
   stage.style.transform = "";
   stage.style.setProperty("--s", 1);
   viewer.classList.remove("zoomed");
-  $("#drawer").setAttribute("aria-hidden", "true");
+  $("#drawer").inert = true;
   for (const s of spots.children) s.classList.remove("active");
   if (instant) { stage.offsetWidth; stage.style.transition = ""; }
 }

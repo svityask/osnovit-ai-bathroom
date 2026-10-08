@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI-дизайн ванной · Основит</title>
   <meta name="description" content="Укажите параметры ванной: сервис нарисует дизайн и покажет, какие материалы Основит понадобятся и где.">
-  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <header class="top">
@@ -102,7 +102,7 @@
           <div class="loading">
             <div class="spinner"></div>
             <strong>Рисуем вашу ванную…</strong>
-            <span id="loadTimer">обычно 10–40 секунд</span>
+            <span id="loadTimer">обычно 5–20 секунд</span>
           </div>
           <div class="failed">
             <strong>Не получилось сгенерировать изображение</strong>
@@ -115,7 +115,7 @@
             <div class="spots" id="spots"></div>
           </div>
 
-          <aside class="drawer" id="drawer" aria-hidden="true">
+          <aside class="drawer" id="drawer" inert>
             <button class="close" type="button" id="close" aria-label="Закрыть">×</button>
             <div class="zone" id="dZone"></div>
             <a class="dmain" id="dLink" target="_blank" rel="noopener">
@@ -141,10 +141,10 @@
   </main>
 
   <footer class="wrap foot">
-    Прототип. Изображения генерирует бесплатный сервис Pollinations.ai; фото и названия продуктов взяты с osnovit.ru.
+    Прототип. Изображения генерирует открытая модель FLUX.1-schnell (Hugging Face), запасной вариант Pollinations.ai; фото и названия продуктов взяты с osnovit.ru.
   </footer>
 
-  <script src="products.js?v=2"></script>
-  <script src="app.js?v=2"></script>
+  <script src="products.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
