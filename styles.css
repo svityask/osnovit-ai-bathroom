@@ -171,6 +171,8 @@ textarea { resize: vertical; }
 .also img { width: 36px; height: 36px; object-fit: contain; background: #fff; border-radius: 8px; flex: none; }
 
 .hint { color: var(--muted); font-size: 14px; margin: 10px 4px 0; }
+.note { font-size: 14px; margin: 10px 0 0; padding: 10px 14px; border-radius: 12px;
+  background: color-mix(in srgb, #f5a524 18%, var(--panel)); color: var(--text); }
 
 /* ---------- список продуктов ---------- */
 .need h2 { font-size: 24px; margin: 40px 0 16px; }

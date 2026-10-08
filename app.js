@@ -188,15 +188,32 @@ function generate(d) {
     goBtn.disabled = false;
     goBtn.textContent = "Создать дизайн";
     if (lastParams !== d) return;
-    if (!ok) { viewer.dataset.state = "error"; return; }
-    img.src = url;
     zones = pickMaterials(d);
+    if (ok) {
+      img.src = url;
+      $("#demoNote").hidden = true;
+    } else {
+      // Бесплатный лимит генерации исчерпан или сервис недоступен: показываем пример,
+      // чтобы точки, зум и подбор материалов всё равно можно было посмотреть.
+      img.src = "demo.jpg";
+      for (const z of zones) Object.assign(z, DEMO_SPOTS[z.id]);
+      $("#demoNote").hidden = false;
+    }
     renderSpots();
     renderCards();
     viewer.dataset.state = "ready";
     $("#hint").hidden = false;
   }
 }
+
+// Координаты зон на demo.jpg (тумба слева, ванна справа).
+const DEMO_SPOTS = {
+  walls: { x: .5, y: .33 },
+  wet: { x: .74, y: .74 },
+  joints: { x: .3, y: .9 },
+  floor: { x: .5, y: .82 },
+  seal: { x: .62, y: .67 },
+};
 
 // ---------- точки ----------
 function renderSpots() {
