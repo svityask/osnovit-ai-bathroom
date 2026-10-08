@@ -368,7 +368,7 @@ function renderSpots() {
     b.style.left = z.x * 100 + "%";
     b.style.top = z.y * 100 + "%";
     b.setAttribute("aria-label", `${z.title}: ${PRODUCTS[z.main].name}`);
-    b.innerHTML = `<span class="core"></span><span class="tip">${z.title}</span>`;
+    b.innerHTML = `<span class="wave"></span><span class="tip">${z.title}</span>`;
     b._zone = z;
     attachDrag(b);
     spots.append(b);
