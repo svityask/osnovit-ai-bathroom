@@ -153,42 +153,54 @@ form.addEventListener("submit", e => {
   if (err) return;
   generate(d);
 });
-$("#retry").addEventListener("click", () => lastParams && generate(lastParams));
+let lastJob = null;
+$("#retry").addEventListener("click", () => lastJob && lastJob());
 
 function generate(d) {
+  lastJob = () => generate(d);
+  const prompt = buildPrompt(d);
+  const seed = Math.floor(Math.random() * 1e9);
+  runJob({
+    params: d, button: goBtn, idleText: "Создать дизайн", busyText: "Генерируем…",
+    title: "Рисуем вашу ванную…", eta: "обычно 5–20 секунд", timeout: 120000,
+    work: () => generateFlux(prompt, seed),
+  });
+}
+
+// Общий запуск генерации или правки: состояние загрузки, таймер, результат, точки.
+function runJob({ params: d, button, idleText, busyText, title, eta, timeout, work }) {
   lastParams = d;
   closeZoom(true);
   viewer.dataset.state = "loading";
   viewer.classList.remove("example");
-  goBtn.disabled = true;
-  goBtn.textContent = "Генерируем…";
+  for (const b of [goBtn, editGo]) b.disabled = true;
+  button.textContent = busyText;
+  $("#loadTitle").textContent = title;
   $("#hint").hidden = true;
   if (window.matchMedia("(max-width: 900px)").matches) viewer.scrollIntoView({ behavior: "smooth", block: "center" });
 
   const started = Date.now();
   clearInterval(timer);
+  $("#loadTimer").textContent = eta;
   timer = setInterval(() => {
     const s = Math.round((Date.now() - started) / 1000);
-    $("#loadTimer").textContent = `прошло ${s} с · обычно 5–20 секунд`;
+    $("#loadTimer").textContent = `прошло ${s} с · ${eta}`;
   }, 1000);
 
-  const prompt = buildPrompt(d);
-  const seed = Math.floor(Math.random() * 1e9);
-  const fail = setTimeout(() => done(null), 120000);
+  const fail = setTimeout(() => done(null, new Error("timeout")), timeout);
   getSegmenter().catch(() => {}); // модель сегментации грузится, пока рисуется картинка
-  generateFlux(prompt, seed).then(url => done(url), () => done(null));
+  work().then(url => done(url), e => done(null, e));
 
   let finished = false;
-  function done(url) {
+  function done(url, error) {
     if (finished) return;
     finished = true;
-    const ok = !!url;
     clearTimeout(fail);
     clearInterval(timer);
-    goBtn.disabled = false;
-    goBtn.textContent = "Создать дизайн";
+    for (const b of [goBtn, editGo]) b.disabled = false;
+    button.textContent = idleText;
     if (lastParams !== d) return;
-    if (!ok) { viewer.dataset.state = "error"; return; }
+    if (!url) { $("#failText").textContent = explain(error); viewer.dataset.state = "error"; return; }
     img.src = url;
     zones = pickMaterials(d);
     spots.innerHTML = "";
@@ -198,9 +210,17 @@ function generate(d) {
     hint.hidden = false;
     hint.textContent = "Ищем на картинке стены, пол и мокрую зону…";
     locateZones(url, zones)
-      .catch(() => false)
-      .then(found => {
+      .catch(() => ({ found: false }))
+      .then(({ found, isBath }) => {
         if (lastParams !== d) return;
+        // На своём фото мокрую зону определяет сегментация: ванна или душ.
+        if (d.fromPhoto && isBath !== undefined && (d.wet === "bath") !== isBath) {
+          const coords = Object.fromEntries(zones.map(z => [z.id, { x: z.x, y: z.y }]));
+          d.wet = isBath ? "bath" : "shower";
+          zones = pickMaterials(d);
+          for (const z of zones) Object.assign(z, coords[z.id]);
+          renderCards();
+        }
         renderSpots();
         hint.textContent = found
           ? "Нажмите на точку, чтобы приблизить. Точки расставлены автоматически; если какая-то промахнулась, перетащите её."
@@ -209,27 +229,159 @@ function generate(d) {
   }
 }
 
+// ---------- вкладки ----------
+const editForm = $("#editForm"), editGo = $("#editGo");
+function showTab(edit) {
+  $("#tabCreate").setAttribute("aria-selected", String(!edit));
+  $("#tabEdit").setAttribute("aria-selected", String(edit));
+  form.hidden = edit;
+  editForm.hidden = !edit;
+}
+$("#tabCreate").addEventListener("click", () => showTab(false));
+$("#tabEdit").addEventListener("click", () => showTab(true));
+
+// ---------- режим «Редактировать своё изображение» ----------
+let photoFile = null;
+const photo = $("#photo"), drop = $("#drop");
+
+function setPhoto(file) {
+  const err = $("#editErr");
+  if (!file) return;
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { err.hidden = false; err.textContent = "Нужна картинка JPG, PNG или WebP."; return; }
+  if (file.size > 15e6) { err.hidden = false; err.textContent = "Файл больше 15 МБ."; return; }
+  err.hidden = true;
+  photoFile = file;
+  const prev = $("#photoPreview");
+  if (prev.src.startsWith("blob:")) URL.revokeObjectURL(prev.src);
+  prev.src = URL.createObjectURL(file);
+  prev.hidden = false;
+  $("#dropText").hidden = true;
+}
+photo.addEventListener("change", () => setPhoto(photo.files[0]));
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); setPhoto(e.dataTransfer.files[0]); });
+
+for (const b of $("#quick").children) {
+  b.setAttribute("aria-pressed", "false");
+  b.addEventListener("click", () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")));
+}
+
+editForm.addEventListener("submit", e => {
+  e.preventDefault();
+  const err = $("#editErr");
+  const chips = [...$("#quick").children].filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.dataset.t);
+  const own = $("#editPrompt").value.trim();
+  const msg = !photoFile ? "Загрузите фото ванной." : !chips.length && !own ? "Напишите, что поменять, или выберите вариант выше." : "";
+  err.hidden = !msg;
+  err.textContent = msg;
+  if (msg) return;
+  editPhoto(photoFile, [...chips, own].filter(Boolean).join("; "), new FormData(editForm));
+});
+
+function editPhoto(file, changes, f) {
+  lastJob = () => editPhoto(file, changes, f);
+  const dims = ["length", "width", "height"].map(k => Number(f.get(k)) || 0);
+  const size = dims.every(Boolean) ? ` Размер помещения ${dims.join("×")} мм.` : "";
+  const prompt = `Отредактируй фото ванной комнаты: ${changes}.${size} ` +
+    "Сохрани форму комнаты, ракурс камеры, перспективу и расположение сантехники. Фотореалистичный интерьер.";
+  // Материалы подбираем по параметрам первой вкладки, мокрую зону уточнит сегментация.
+  const d = { ...readForm(), fromPhoto: true };
+  runJob({
+    params: d, button: editGo, idleText: "Изменить дизайн", busyText: "Меняем…",
+    title: "Меняем дизайн вашей ванной…", eta: "обычно 20–60 секунд", timeout: 240000,
+    work: async () => {
+      const image = await toFourThree(file);
+      // Qwen-Image-Edit понимает русский; FLUX.1 Kontext — запасной вариант.
+      return editWithSpace(QWEN_EDIT_SPACE, image, f => [f, prompt, 0, true, 1, 8, false])
+        .catch(e => {
+          if (/quota/i.test(e.message)) throw e;
+          return editWithSpace(KONTEXT_SPACE, image, f => [f, prompt, 0, true, 2.5, 28]);
+        });
+    },
+  });
+}
+
+// Фото → JPEG 4:3 до 1024×768 (обрезка по центру), чтобы точки совпадали с картинкой.
+async function toFourThree(file) {
+  const bmp = await createImageBitmap(file);
+  let sw = bmp.width, sh = bmp.height;
+  if (sw / sh > 4 / 3) sw = sh * 4 / 3; else sh = sw * 3 / 4;
+  const w = Math.min(1024, Math.round(sw)), h = Math.round(w * 3 / 4);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(bmp, (bmp.width - sw) / 2, (bmp.height - sh) / 2, sw, sh, 0, 0, w, h);
+  return new Promise(r => c.toBlob(r, "image/jpeg", .92));
+}
+
+// Правка фото открытой моделью в публичном Hugging Face Space.
+const QWEN_EDIT_SPACE = "https://multimodalart-qwen-image-edit-fast.hf.space";
+const KONTEXT_SPACE = "https://black-forest-labs-flux-1-kontext-dev.hf.space";
+
+async function editWithSpace(space, image, args) {
+  const fd = new FormData();
+  fd.append("files", image, "bathroom.jpg");
+  const up = await fetch(space + "/gradio_api/upload", { method: "POST", body: fd });
+  if (!up.ok) throw new Error("upload " + up.status);
+  const [path] = await up.json();
+  const [result] = await callSpace(space, "infer", args({ path, meta: { _type: "gradio.FileData" } }));
+  return keepImage(result.url);
+}
+
 // Генерация: открытая модель FLUX.1-schnell в публичном Hugging Face Space.
 // Бесплатно, без ключа; у каждого посетителя свой суточный лимит GPU.
 const FLUX_SPACE = "https://black-forest-labs-flux-1-schnell.hf.space";
 
 async function generateFlux(prompt, seed) {
-  const start = await fetch(FLUX_SPACE + "/gradio_api/call/infer", {
+  // prompt, seed, randomize_seed, width, height, steps
+  const [result] = await callSpace(FLUX_SPACE, "infer", [prompt, seed, false, 1024, 768, 4]);
+  return keepImage(result.url);
+}
+
+// Вызов функции Gradio Space через очередь. В отличие от /call, очередь возвращает текст ошибки,
+// например «ZeroGPU quota exceeded … Try again in 0:12:00», и его можно показать человеку.
+const spaceConfigs = {};
+async function callSpace(space, apiName, data) {
+  spaceConfigs[space] ??= fetch(space + "/config").then(r => r.json())
+    .catch(e => { delete spaceConfigs[space]; throw e; });
+  const cfg = await spaceConfigs[space];
+  const fn_index = cfg.dependencies.findIndex(d => d.api_name === apiName);
+  const session_hash = Math.random().toString(36).slice(2);
+  const join = await fetch(space + "/gradio_api/queue/join", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // prompt, seed, randomize_seed, width, height, steps
-    body: JSON.stringify({ data: [prompt, seed, false, 1024, 768, 4] }),
+    body: JSON.stringify({ data, fn_index, session_hash, event_data: null, trigger_id: null }),
   });
-  if (!start.ok) throw new Error("flux " + start.status);
-  const { event_id } = await start.json();
-  const stream = await (await fetch(`${FLUX_SPACE}/gradio_api/call/infer/${event_id}`)).text();
-  const m = stream.match(/event: complete\ndata: (.*)/);
-  if (!m) throw new Error("flux failed");
-  // Файлы Space временные, поэтому сразу сохраняем картинку в память браузера.
-  const blob = await (await fetch(JSON.parse(m[1])[0].url)).blob();
+  if (!join.ok) throw new Error("join " + join.status);
+  const stream = await (await fetch(`${space}/gradio_api/queue/data?session_hash=${session_hash}`)).text();
+  for (const line of stream.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const m = JSON.parse(line.slice(6));
+    if (m.msg !== "process_completed") continue;
+    if (m.success) return m.output.data;
+    throw new Error(m.output?.error || m.title || "failed");
+  }
+  throw new Error("no result");
+}
+
+// Файлы Space временные, поэтому сразу сохраняем картинку в память браузера.
+async function keepImage(remoteUrl) {
+  const blob = await (await fetch(remoteUrl)).blob();
   const url = URL.createObjectURL(blob);
   await preload(url);
   return url;
+}
+
+// Понятный текст ошибки для экрана «не получилось».
+function explain(err) {
+  const msg = String(err?.message || err);
+  if (/quota/i.test(msg)) {
+    const t = msg.match(/Try again in (\d+):(\d+):(\d+)/);
+    const min = t ? Number(t[1]) * 60 + Number(t[2]) + (Number(t[3]) > 0 ? 1 : 0) : 0;
+    return "Закончился бесплатный лимит GPU на Hugging Face. У каждого посетителя он свой и восстанавливается со временем" +
+      (min > 1 ? `: попробуйте примерно через ${min} мин.` : ". Попробуйте чуть позже.");
+  }
+  return "Hugging Face не ответил: сервер перегружен или временно недоступен. Попробуйте ещё раз чуть позже.";
 }
 
 function preload(url) {
@@ -355,7 +507,7 @@ async function locateZones(url, zones) {
   found += put("walls", deepest(wall, taken, .3) || deepest(wall, taken));
   found += put("floor", deepest(floor, taken));
   found += put("joints", deepest(wall, taken, .25) || deepest(floor, taken, .2));
-  return found >= 3;
+  return { found: found >= 3, isBath: hasWet ? isBath : undefined };
 }
 
 // ---------- точки ----------

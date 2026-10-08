@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI-дизайн ванной · Основит</title>
   <meta name="description" content="Укажите параметры ванной: сервис нарисует дизайн и покажет, какие материалы Основит понадобятся и где.">
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
   <header class="top">
@@ -20,6 +20,11 @@
     <p class="lead">Укажите параметры помещения и отделки: сервис нарисует визуализацию и отметит точками, где какой материал Основит используется. Нажмите на точку, чтобы приблизить.</p>
 
     <div class="layout">
+      <div class="left">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab" id="tabCreate" aria-selected="true" aria-controls="form">Создать дизайн</button>
+        <button type="button" role="tab" class="tab" id="tabEdit" aria-selected="false" aria-controls="editForm">Редактировать своё изображение</button>
+      </div>
       <form id="form" class="panel form" novalidate>
         <details open>
           <summary>Помещение</summary>
@@ -93,6 +98,41 @@
         <button class="btn" type="submit" id="go">Создать дизайн</button>
       </form>
 
+      <form id="editForm" class="panel form" novalidate hidden>
+        <div class="sect">
+          <h3>Ваше фото</h3>
+          <label class="drop" id="drop">
+            <input type="file" id="photo" accept="image/jpeg,image/png,image/webp">
+            <img id="photoPreview" alt="" hidden>
+            <span class="drop-text" id="dropText"><b>Загрузите фото ванной</b><br>JPG, PNG или WebP, до 15 МБ. Можно перетащить сюда.</span>
+          </label>
+          <p class="fine">Фото обрежется до формата 4:3 по центру.</p>
+        </div>
+        <div class="sect">
+          <h3>Помещение <span class="opt">(необязательно)</span></h3>
+          <div class="grid3">
+            <label>Длина, мм<input type="number" name="length" min="1000" max="8000" step="10" placeholder="2400"></label>
+            <label>Ширина, мм<input type="number" name="width" min="1000" max="8000" step="10" placeholder="1800"></label>
+            <label>Высота, мм<input type="number" name="height" min="2000" max="4000" step="10" placeholder="2700"></label>
+          </div>
+        </div>
+        <div class="sect">
+          <h3>Что поменять в дизайне</h3>
+          <div class="quick" id="quick">
+            <button type="button" data-t="замени плитку на стенах на светлую под мрамор">Стены под мрамор</button>
+            <button type="button" data-t="замени плитку на полу на крупную серую под бетон">Пол под бетон</button>
+            <button type="button" data-t="сделай плитку и затирку светлее">Светлее</button>
+            <button type="button" data-t="замени ванну на душевую с прозрачным стеклом">Душ вместо ванны</button>
+            <button type="button" data-t="добавь подвесную тумбу с деревянным фасадом">Деревянная тумба</button>
+            <button type="button" data-t="сделай тёплое уютное освещение">Тёплый свет</button>
+          </div>
+          <label><span class="sr">Своими словами</span><textarea name="prompt" id="editPrompt" rows="3" maxlength="400" placeholder="Например: замени плитку на стенах на бежевую, добавь чёрные смесители"></textarea></label>
+        </div>
+        <p class="err" id="editErr" hidden></p>
+        <button class="btn" type="submit" id="editGo">Изменить дизайн</button>
+      </form>
+      </div>
+
       <section class="result" aria-live="polite">
         <div class="viewer panel" id="viewer" data-state="empty">
           <div class="placeholder">
@@ -101,12 +141,12 @@
           </div>
           <div class="loading">
             <div class="spinner"></div>
-            <strong>Рисуем вашу ванную…</strong>
+            <strong id="loadTitle">Рисуем вашу ванную…</strong>
             <span id="loadTimer">обычно 5–20 секунд</span>
           </div>
           <div class="failed">
             <strong>Не получилось сгенерировать изображение</strong>
-            <span>Hugging Face не ответил. Скорее всего, на сегодня исчерпан бесплатный лимит GPU или сервер перегружен. Попробуйте ещё раз чуть позже.</span>
+            <span id="failText">Hugging Face не ответил. Попробуйте ещё раз чуть позже.</span>
             <button class="btn small" type="button" id="retry">Попробовать ещё раз</button>
           </div>
 
@@ -144,7 +184,7 @@
     Прототип. Изображения генерирует открытая модель FLUX.1-schnell на Hugging Face; фото и названия продуктов взяты с osnovit.ru.
   </footer>
 
-  <script src="products.js?v=9"></script>
-  <script src="app.js?v=9"></script>
+  <script src="products.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
