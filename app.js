@@ -174,6 +174,7 @@ function generate(d) {
   const prompt = buildPrompt(d);
   const seed = Math.floor(Math.random() * 1e9);
   const fail = setTimeout(() => done(null), 120000);
+  getSegmenter().catch(() => {}); // модель сегментации грузится, пока рисуется картинка
   generateFlux(prompt, seed).then(url => done(url), () => done(null));
 
   let finished = false;
@@ -189,10 +190,21 @@ function generate(d) {
     if (!ok) { viewer.dataset.state = "error"; return; }
     img.src = url;
     zones = pickMaterials(d);
-    renderSpots();
+    spots.innerHTML = "";
     renderCards();
     viewer.dataset.state = "ready";
-    $("#hint").hidden = false;
+    const hint = $("#hint");
+    hint.hidden = false;
+    hint.textContent = "Ищем на картинке стены, пол и мокрую зону…";
+    locateZones(url, zones)
+      .catch(() => false)
+      .then(found => {
+        if (lastParams !== d) return;
+        renderSpots();
+        hint.textContent = found
+          ? "Нажмите на точку, чтобы приблизить. Точки расставлены автоматически; если какая-то промахнулась, перетащите её."
+          : "Нажмите на точку, чтобы приблизить. Если точка промахнулась, перетащите её на нужное место.";
+      });
   }
 }
 
@@ -212,7 +224,9 @@ async function generateFlux(prompt, seed) {
   const stream = await (await fetch(`${FLUX_SPACE}/gradio_api/call/infer/${event_id}`)).text();
   const m = stream.match(/event: complete\ndata: (.*)/);
   if (!m) throw new Error("flux failed");
-  const url = JSON.parse(m[1])[0].url;
+  // Файлы Space временные, поэтому сразу сохраняем картинку в память браузера.
+  const blob = await (await fetch(JSON.parse(m[1])[0].url)).blob();
+  const url = URL.createObjectURL(blob);
   await preload(url);
   return url;
 }
@@ -226,6 +240,123 @@ function preload(url) {
   });
 }
 
+// ---------- автоматические точки: сегментация в браузере ----------
+// Модель SegFormer (ADE20K, обучена на интерьерах) скачивается с Hugging Face Hub
+// и работает прямо в браузере через transformers.js: без сервера и без лимитов.
+const TRANSFORMERS_JS = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0";
+const SEG_MODEL = "Xenova/segformer-b0-finetuned-ade-512-512";
+let segmenter = null;
+
+function getSegmenter() {
+  segmenter ??= import(TRANSFORMERS_JS)
+    .then(({ pipeline }) => pipeline("image-segmentation", SEG_MODEL, { dtype: "q8" }))
+    .catch(e => { segmenter = null; throw e; });
+  return segmenter;
+}
+
+const GW = 64, GH = 48; // сетка, на которой ищем точки
+
+// Маски классов → сетка GW×GH: клетка «внутри», если в ней больше половины пикселей класса.
+function toGrid(masks) {
+  const g = new Uint8Array(GW * GH);
+  if (!masks.length) return g;
+  const { width: w, height: h } = masks[0];
+  const cw = w / GW, chh = h / GH;
+  for (let gy = 0; gy < GH; gy++) {
+    for (let gx = 0; gx < GW; gx++) {
+      let inside = 0, total = 0;
+      for (let y = Math.floor(gy * chh); y < (gy + 1) * chh; y += 2) {
+        for (let x = Math.floor(gx * cw); x < (gx + 1) * cw; x += 2) {
+          total++;
+          if (masks.some(m => m.data[y * w + x])) inside++;
+        }
+      }
+      g[gy * GW + gx] = inside * 2 > total ? 1 : 0;
+    }
+  }
+  return g;
+}
+
+// Расстояние от каждой клетки до края маски (или края картинки): чем больше, тем «глубже» точка.
+function depth(g) {
+  const d = new Float32Array(GW * GH);
+  const at = (x, y) => (x < 0 || y < 0 || x >= GW || y >= GH ? 0 : d[y * GW + x]);
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++)
+    d[y * GW + x] = g[y * GW + x] ? Math.min(at(x - 1, y), at(x, y - 1)) + 1 : 0;
+  for (let y = GH - 1; y >= 0; y--) for (let x = GW - 1; x >= 0; x--)
+    if (g[y * GW + x]) d[y * GW + x] = Math.min(d[y * GW + x], at(x + 1, y) + 1, at(x, y + 1) + 1);
+  return d;
+}
+
+const far = (p, others, min) => others.every(o => Math.hypot((p.x - o.x) * 4 / 3, p.y - o.y) >= min);
+
+// Самая «глубокая» клетка маски, не ближе min к уже поставленным точкам.
+function deepest(g, taken = [], min = .18) {
+  const d = depth(g);
+  let best = null, bestD = 1.5;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const p = { x: (x + .5) / GW, y: (y + .5) / GH };
+    if (d[y * GW + x] > bestD && far(p, taken, min)) { bestD = d[y * GW + x]; best = p; }
+  }
+  return best;
+}
+
+// Середина области, которую ограничивает тонкая маска (стекло душевой): точка внутри душа.
+function boxPoint(g) {
+  let x0 = GW, y0 = GH, x1 = -1, y1 = -1;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (g[y * GW + x]) {
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  return x1 < 0 ? null : { x: (x0 + x1 + 1) / 2 / GW, y: (y0 + (y1 - y0 + 1) * .6) / GH };
+}
+
+// Нижний край мокрой зоны там, где она касается пола или стены: место для герметика.
+function junction(wet, around) {
+  let best = null;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    if (!wet[y * GW + x]) continue;
+    const touches = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      const nx = x + dx, ny = y + dy;
+      return nx >= 0 && ny >= 0 && nx < GW && ny < GH && around[ny * GW + nx];
+    });
+    if (touches && (!best || y > best.gy)) best = { gy: y, x: (x + .5) / GW, y: (y + .5) / GH };
+  }
+  return best && { x: best.x, y: best.y };
+}
+
+async function locateZones(url, zones) {
+  const seg = await getSegmenter();
+  const out = await seg(url);
+  const masks = names => out.filter(o => names.includes(o.label)).map(o => o.mask);
+  const area = g => g.reduce((a, b) => a + b, 0) / g.length;
+
+  const wall = toGrid(masks(["wall"]));
+  const floor = toGrid(masks(["floor"]));
+  let wet = toGrid(masks(["bathtub"]));
+  const isBath = area(wet) >= .004;
+  if (!isBath) wet = toGrid(masks(["shower", "screen door"]));
+  const hasWet = area(wet) >= .004;
+  const around = wall.map((v, i) => v | floor[i]);
+
+  const taken = [];
+  const put = (id, p) => {
+    const z = zones.find(z => z.id === id);
+    if (z && p) { Object.assign(z, p); taken.push(p); }
+    return !!p;
+  };
+  let found = 0;
+  if (hasWet) {
+    found += put("wet", isBath ? deepest(wet) : boxPoint(wet));
+    found += put("seal", junction(wet, around));
+  } else {
+    found += put("seal", junction(floor, wall));
+  }
+  found += put("walls", deepest(wall, taken, .3) || deepest(wall, taken));
+  found += put("floor", deepest(floor, taken));
+  found += put("joints", deepest(wall, taken, .25) || deepest(floor, taken, .2));
+  return found >= 3;
+}
+
 // ---------- точки ----------
 function renderSpots() {
   spots.innerHTML = "";
@@ -236,7 +367,7 @@ function renderSpots() {
     b.style.left = z.x * 100 + "%";
     b.style.top = z.y * 100 + "%";
     b.setAttribute("aria-label", `${z.title}: ${PRODUCTS[z.main].name}`);
-    b.innerHTML = `<span class="tip">${z.title}</span>`;
+    b.innerHTML = `<span class="core"></span><span class="tip">${z.title}</span>`;
     b._zone = z;
     attachDrag(b);
     spots.append(b);
