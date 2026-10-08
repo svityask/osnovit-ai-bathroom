@@ -174,9 +174,7 @@ function generate(d) {
   const prompt = buildPrompt(d);
   const seed = Math.floor(Math.random() * 1e9);
   const fail = setTimeout(() => done(null), 120000);
-  generateFlux(prompt, seed)
-    .catch(() => generatePollinations(prompt, seed))
-    .then(url => done(url), () => done(null));
+  generateFlux(prompt, seed).then(url => done(url), () => done(null));
 
   let finished = false;
   function done(url) {
@@ -188,17 +186,9 @@ function generate(d) {
     goBtn.disabled = false;
     goBtn.textContent = "Создать дизайн";
     if (lastParams !== d) return;
+    if (!ok) { viewer.dataset.state = "error"; return; }
+    img.src = url;
     zones = pickMaterials(d);
-    if (ok) {
-      img.src = url;
-      $("#demoNote").hidden = true;
-    } else {
-      // Бесплатный лимит генерации исчерпан или сервис недоступен: показываем пример,
-      // чтобы точки, зум и подбор материалов всё равно можно было посмотреть.
-      img.src = "demo.jpg";
-      for (const z of zones) Object.assign(z, DEMO_SPOTS[z.id]);
-      $("#demoNote").hidden = false;
-    }
     renderSpots();
     renderCards();
     viewer.dataset.state = "ready";
@@ -206,7 +196,7 @@ function generate(d) {
   }
 }
 
-// Основной генератор: открытая модель FLUX.1-schnell в публичном Hugging Face Space.
+// Генерация: открытая модель FLUX.1-schnell в публичном Hugging Face Space.
 // Бесплатно, без ключа; у каждого посетителя свой суточный лимит GPU.
 const FLUX_SPACE = "https://black-forest-labs-flux-1-schnell.hf.space";
 
@@ -227,14 +217,6 @@ async function generateFlux(prompt, seed) {
   return url;
 }
 
-// Запасной генератор: Pollinations (лимит меньше, качество ниже).
-async function generatePollinations(prompt, seed) {
-  const url = "https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt) +
-    `?width=1024&height=768&seed=${seed}&nologo=true&model=flux`;
-  await preload(url);
-  return url;
-}
-
 function preload(url) {
   return new Promise((resolve, reject) => {
     const im = new Image();
@@ -243,15 +225,6 @@ function preload(url) {
     im.src = url;
   });
 }
-
-// Координаты зон на demo.jpg (тумба слева, ванна справа).
-const DEMO_SPOTS = {
-  walls: { x: .5, y: .33 },
-  wet: { x: .74, y: .74 },
-  joints: { x: .3, y: .9 },
-  floor: { x: .5, y: .82 },
-  seal: { x: .62, y: .67 },
-};
 
 // ---------- точки ----------
 function renderSpots() {

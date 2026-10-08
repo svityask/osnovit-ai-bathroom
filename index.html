@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI-дизайн ванной · Основит</title>
   <meta name="description" content="Укажите параметры ванной: сервис нарисует дизайн и покажет, какие материалы Основит понадобятся и где.">
-  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
   <header class="top">
@@ -106,7 +106,7 @@
           </div>
           <div class="failed">
             <strong>Не получилось сгенерировать изображение</strong>
-            <span>Сервис генерации перегружен или недоступен.</span>
+            <span>Hugging Face не ответил. Скорее всего, на сегодня исчерпан бесплатный лимит GPU или сервер перегружен. Попробуйте ещё раз чуть позже.</span>
             <button class="btn small" type="button" id="retry">Попробовать ещё раз</button>
           </div>
 
@@ -129,7 +129,6 @@
             <div class="also" id="dAlso"></div>
           </aside>
         </div>
-        <p class="note" id="demoNote" hidden>Бесплатный сервис генерации сейчас недоступен или исчерпан лимит, поэтому показан пример. Материалы подобраны по вашим параметрам. Попробуйте сгенерировать ещё раз позже.</p>
         <p class="hint" id="hint" hidden>Нажмите на синюю точку, чтобы приблизить. Если точка промахнулась, перетащите её на нужное место.</p>
       </section>
     </div>
@@ -141,10 +140,10 @@
   </main>
 
   <footer class="wrap foot">
-    Прототип. Изображения генерирует открытая модель FLUX.1-schnell (Hugging Face), запасной вариант Pollinations.ai; фото и названия продуктов взяты с osnovit.ru.
+    Прототип. Изображения генерирует открытая модель FLUX.1-schnell на Hugging Face; фото и названия продуктов взяты с osnovit.ru.
   </footer>
 
-  <script src="products.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="products.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
