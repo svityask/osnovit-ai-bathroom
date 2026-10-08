@@ -159,6 +159,7 @@ function generate(d) {
   lastParams = d;
   closeZoom(true);
   viewer.dataset.state = "loading";
+  viewer.classList.remove("example");
   goBtn.disabled = true;
   goBtn.textContent = "Генерируем…";
   $("#hint").hidden = true;
@@ -486,3 +487,28 @@ function renderCards() {
   }
   $("#need").hidden = false;
 }
+
+// ---------- пример при открытии страницы ----------
+// Картинка нарисована той же моделью FLUX.1-schnell на Hugging Face с параметрами формы по умолчанию,
+// точки расставлены автоматической сегментацией (координаты сохранены, чтобы не грузить модель зря).
+const EXAMPLE_SPOTS = {
+  walls: { x: .85, y: .18 },
+  wet: { x: .22, y: .53 },
+  joints: { x: .10, y: .28 },
+  floor: { x: .41, y: .84 },
+  seal: { x: .18, y: .78 },
+};
+
+function showExample() {
+  img.src = "example.webp";
+  zones = pickMaterials(readForm());
+  for (const z of zones) Object.assign(z, EXAMPLE_SPOTS[z.id]);
+  renderSpots();
+  renderCards();
+  viewer.dataset.state = "ready";
+  viewer.classList.add("example");
+  const hint = $("#hint");
+  hint.hidden = false;
+  hint.textContent = "Это пример. Нажмите на точку, чтобы посмотреть материал. Заполните форму и нажмите «Создать дизайн», чтобы получить свой вариант.";
+}
+showExample();
